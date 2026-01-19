@@ -395,16 +395,17 @@
         "Create README.md with project overview",
         "Document all environment variables with examples",
         "Include Linear setup: custom field, webhook, labels, statuses",
+        "Include GitHub setup: token, webhook, labels",
         "Include cloudflared installation: brew install cloudflared",
         "Include tunnel command: cloudflared tunnel --url http://localhost:3847",
-        "Document webhook URL format for Linear",
+        "Document webhook URL format for both providers",
         "Include npm scripts documentation",
         "Add quick start section",
         "Typecheck passes"
       ],
       "priority": 23,
       "passes": true,
-      "notes": "Complete: Comprehensive README with setup instructions"
+      "notes": "Complete: Comprehensive README with multi-provider setup instructions"
     },
     {
       "id": "US-024",
