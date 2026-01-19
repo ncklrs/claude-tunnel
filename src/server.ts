@@ -2,16 +2,28 @@ import { Hono } from "hono";
 import { config } from "./config";
 import { logger } from "./logger";
 import * as queue from "./services/queue";
-import { webhook } from "./routes/webhook";
+import { linearWebhook } from "./providers/linear/webhook";
+import { githubWebhook } from "./providers/github/webhook";
 import { retry } from "./routes/retry";
 import { startProcessor } from "./services/processor";
 import { loadState } from "./services/state";
 import { cleanupOrphanWorktrees } from "./services/git";
+import { isProviderConfigured, getConfiguredProviders } from "./providers";
 
 const app = new Hono();
 
-// Mount routes
-app.route("/webhook", webhook);
+// Mount webhook routes conditionally based on configured providers
+if (isProviderConfigured("linear")) {
+  app.route("/webhook/linear", linearWebhook);
+  logger.info("Linear webhook enabled at /webhook/linear");
+}
+
+if (isProviderConfigured("github")) {
+  app.route("/webhook/github", githubWebhook);
+  logger.info("GitHub webhook enabled at /webhook/github");
+}
+
+// Mount other routes
 app.route("/retry", retry);
 
 // Track server start time for uptime calculation
@@ -24,6 +36,7 @@ app.get("/health", (c) => {
   return c.json({
     status: "ok",
     uptime: Math.floor((Date.now() - startTime) / 1000),
+    providers: getConfiguredProviders(),
   });
 });
 
@@ -32,7 +45,10 @@ app.get("/health", (c) => {
  */
 app.get("/status", (c) => {
   const status = queue.getStatus();
-  return c.json(status);
+  return c.json({
+    ...status,
+    providers: getConfiguredProviders(),
+  });
 });
 
 /**
@@ -66,7 +82,9 @@ export async function startServer(): Promise<void> {
     fetch: app.fetch,
   });
 
-  logger.info(`Linear Agent server started on port ${server.port}`);
+  const providers = getConfiguredProviders();
+  logger.info(`Issue Agent server started on port ${server.port}`);
+  logger.info(`Configured providers: ${providers.join(", ") || "none"}`);
 }
 
 /**

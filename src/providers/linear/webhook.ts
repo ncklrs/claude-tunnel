@@ -1,13 +1,23 @@
 import { Hono } from "hono";
 import { createHmac } from "crypto";
-import { config } from "../config";
-import { logger } from "../logger";
-import type { WebhookPayload, WebhookFilterResult, AgentTask } from "../types";
-import { getIssue, getRepositoryFromIssue, getLabel } from "../services/linear-client";
-import * as queue from "../services/queue";
+import { config } from "../../config";
+import { logger } from "../../logger";
+import type { WebhookPayload, WebhookFilterResult, AgentTask } from "../../types";
+import { LinearIssueClient } from "./client";
+import * as queue from "../../services/queue";
 import { resolve } from "path";
 
-const webhook = new Hono();
+const linearWebhook = new Hono();
+
+// Lazy-loaded client instance
+let client: LinearIssueClient | null = null;
+
+function getClient(): LinearIssueClient {
+  if (!client) {
+    client = new LinearIssueClient();
+  }
+  return client;
+}
 
 /**
  * Validate the Linear webhook signature
@@ -70,13 +80,14 @@ async function shouldProcess(
   }
 
   // Check if any added label is the trigger label
+  const linearClient = getClient();
   for (const labelId of addedLabelIds) {
-    const label = await getLabel(labelId);
+    const label = await linearClient.getLabel(labelId);
     if (
       label &&
-      label.name.toLowerCase() === config.triggerLabel.toLowerCase()
+      label.name.toLowerCase() === config.linearTriggerLabel.toLowerCase()
     ) {
-      logger.info(`Trigger label "${config.triggerLabel}" was added`, {
+      logger.info(`Trigger label "${config.linearTriggerLabel}" was added`, {
         issueId: payload.data.id,
       });
       return {
@@ -89,7 +100,7 @@ async function shouldProcess(
 
   logger.debug("Added labels do not include trigger label", {
     addedLabelIds,
-    triggerLabel: config.triggerLabel,
+    triggerLabel: config.linearTriggerLabel,
   });
   return { shouldProcess: false };
 }
@@ -97,7 +108,13 @@ async function shouldProcess(
 /**
  * POST /webhook/linear - Handle incoming Linear webhooks
  */
-webhook.post("/linear", async (c) => {
+linearWebhook.post("/", async (c) => {
+  // Check if Linear is configured
+  if (!config.linearApiKey || !config.linearWebhookSecret) {
+    logger.warn("Linear webhook received but Linear is not configured");
+    return c.json({ error: "Linear not configured" }, 503);
+  }
+
   // Get raw body for signature validation
   const rawBody = await c.req.text();
 
@@ -119,7 +136,7 @@ webhook.post("/linear", async (c) => {
     return c.json({ error: "Invalid JSON" }, 400);
   }
 
-  logger.debug("Received webhook", {
+  logger.debug("Received Linear webhook", {
     type: payload.type,
     action: payload.action,
     issueId: payload.data.id,
@@ -132,14 +149,15 @@ webhook.post("/linear", async (c) => {
   }
 
   // Fetch full issue details
-  const issue = await getIssue(filterResult.issueId);
+  const linearClient = getClient();
+  const issue = await linearClient.getIssue(filterResult.issueId);
   if (!issue) {
     logger.error("Issue not found", { issueId: filterResult.issueId });
     return c.json({ error: "Issue not found" }, 400);
   }
 
   // Get repository from custom field
-  const repo = getRepositoryFromIssue(issue);
+  const repo = linearClient.getRepository(issue);
   if (!repo) {
     logger.error("Repository not specified in issue custom field", {
       issueId: issue.identifier,
@@ -160,7 +178,8 @@ webhook.post("/linear", async (c) => {
   }
 
   // Create task and add to queue
-  const worktreePath = resolve(config.worktreesPath, issue.identifier);
+  const branchName = linearClient.getBranchName(issue);
+  const worktreePath = resolve(config.worktreesPath, branchName);
   const task: AgentTask = {
     issueId: issue.id,
     identifier: issue.identifier,
@@ -168,15 +187,17 @@ webhook.post("/linear", async (c) => {
     worktreePath,
     status: "queued",
     title: issue.title,
+    provider: "linear",
   };
 
   queue.addTask(task);
   logger.info("Issue enqueued for processing", {
     issueId: issue.identifier,
     repo,
+    provider: "linear",
   });
 
   return c.json({ status: "enqueued", issueId: issue.identifier }, 200);
 });
 
-export { webhook };
+export { linearWebhook };

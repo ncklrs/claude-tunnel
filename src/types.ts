@@ -1,12 +1,71 @@
 /**
+ * Supported issue providers
+ */
+export type IssueProvider = "linear" | "github";
+
+/**
+ * Generic label from any issue provider
+ */
+export interface IssueLabel {
+  id: string;
+  name: string;
+}
+
+/**
+ * Generic comment from any issue provider
+ */
+export interface IssueComment {
+  id: string;
+  body: string;
+  createdAt: string;
+  user?: {
+    name: string;
+  };
+}
+
+/**
+ * Parent issue reference (generic)
+ */
+export interface ParentIssue {
+  id: string;
+  identifier: string;
+  title: string;
+  description?: string;
+}
+
+/**
+ * Generic issue from any provider
+ */
+export interface Issue {
+  id: string;
+  identifier: string;
+  title: string;
+  description?: string;
+  labels: IssueLabel[];
+  comments: IssueComment[];
+  parent?: ParentIssue;
+  /** Provider-specific repository identifier */
+  repository?: string;
+  /** Provider-specific metadata */
+  metadata?: Record<string, unknown>;
+}
+
+/**
  * Configuration for the Linear Agent service
  */
 export interface Config {
-  // Linear API
-  linearApiKey: string;
-  linearWebhookSecret: string;
-  triggerLabel: string;
+  // Linear API (optional - only required if using Linear provider)
+  linearApiKey?: string;
+  linearWebhookSecret?: string;
+  linearTriggerLabel: string;
   repoCustomFieldName: string;
+
+  // GitHub API (optional - only required if using GitHub provider)
+  githubToken?: string;
+  githubWebhookSecret?: string;
+  githubTriggerLabel: string;
+  githubInProgressLabel: string;
+  githubReviewLabel: string;
 
   // Git paths
   reposBasePath: string;
@@ -107,6 +166,7 @@ export interface AgentTask {
   status: AgentTaskStatus;
   startedAt?: Date;
   title: string;
+  provider: IssueProvider;
 }
 
 /**

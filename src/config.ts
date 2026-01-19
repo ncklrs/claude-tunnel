@@ -24,24 +24,17 @@ function loadConfigJson(): Partial<Config> {
 }
 
 /**
- * Get a required environment variable, throw if missing
- */
-function required(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(
-      `Missing required environment variable: ${name}. ` +
-        `Please set it in your .env file or environment.`
-    );
-  }
-  return value;
-}
-
-/**
  * Get an optional environment variable with a default
  */
 function optional(name: string, defaultValue: string): string {
   return process.env[name] || defaultValue;
+}
+
+/**
+ * Get an optional environment variable, returning undefined if not set
+ */
+function optionalOrUndefined(name: string): string | undefined {
+  return process.env[name] || undefined;
 }
 
 /**
@@ -69,17 +62,30 @@ const jsonConfig = loadConfigJson();
  * Resolved configuration from environment variables, .env file, and config.json
  */
 export const config: Config = {
-  // Linear API - required
-  linearApiKey: jsonConfig.linearApiKey || required("LINEAR_API_KEY"),
+  // Linear API - optional (only required if using Linear provider)
+  linearApiKey: jsonConfig.linearApiKey || optionalOrUndefined("LINEAR_API_KEY"),
   linearWebhookSecret:
-    jsonConfig.linearWebhookSecret || required("LINEAR_WEBHOOK_SECRET"),
+    jsonConfig.linearWebhookSecret || optionalOrUndefined("LINEAR_WEBHOOK_SECRET"),
 
   // Linear settings - optional with defaults
-  triggerLabel:
-    jsonConfig.triggerLabel || optional("TRIGGER_LABEL", "ai-attempt"),
+  linearTriggerLabel:
+    jsonConfig.linearTriggerLabel || optional("LINEAR_TRIGGER_LABEL", optional("TRIGGER_LABEL", "ai-attempt")),
   repoCustomFieldName:
     jsonConfig.repoCustomFieldName ||
     optional("REPO_CUSTOM_FIELD_NAME", "Repository"),
+
+  // GitHub API - optional (only required if using GitHub provider)
+  githubToken: jsonConfig.githubToken || optionalOrUndefined("GITHUB_TOKEN"),
+  githubWebhookSecret:
+    jsonConfig.githubWebhookSecret || optionalOrUndefined("GITHUB_WEBHOOK_SECRET"),
+
+  // GitHub settings - optional with defaults
+  githubTriggerLabel:
+    jsonConfig.githubTriggerLabel || optional("GITHUB_TRIGGER_LABEL", "ai-attempt"),
+  githubInProgressLabel:
+    jsonConfig.githubInProgressLabel || optional("GITHUB_IN_PROGRESS_LABEL", "in-progress"),
+  githubReviewLabel:
+    jsonConfig.githubReviewLabel || optional("GITHUB_REVIEW_LABEL", "review"),
 
   // Git paths - required (no sensible default)
   reposBasePath:
@@ -108,7 +114,7 @@ export const config: Config = {
     jsonConfig.autoCleanOrphans ??
     parseBoolean(optional("AUTO_CLEAN_ORPHANS", "false")),
 
-  // Linear status mapping
+  // Linear status mapping (used by Linear provider)
   inProgressStatus:
     jsonConfig.inProgressStatus || optional("IN_PROGRESS_STATUS", "In Progress"),
   reviewStatus:
@@ -124,15 +130,33 @@ export const config: Config = {
  */
 export function validateConfig(): void {
   const errors: string[] = [];
+  const warnings: string[] = [];
 
-  if (!config.linearApiKey) {
-    errors.push("LINEAR_API_KEY is required");
+  // At least one provider must be configured
+  const hasLinear = config.linearApiKey && config.linearWebhookSecret;
+  const hasGitHub = config.githubToken && config.githubWebhookSecret;
+
+  if (!hasLinear && !hasGitHub) {
+    errors.push(
+      "At least one provider must be configured. Set either LINEAR_API_KEY + LINEAR_WEBHOOK_SECRET or GITHUB_TOKEN + GITHUB_WEBHOOK_SECRET"
+    );
   }
 
-  if (!config.linearWebhookSecret) {
-    errors.push("LINEAR_WEBHOOK_SECRET is required");
+  // Warn about partial configurations
+  if (config.linearApiKey && !config.linearWebhookSecret) {
+    warnings.push("LINEAR_API_KEY is set but LINEAR_WEBHOOK_SECRET is missing - Linear provider will not work");
+  }
+  if (!config.linearApiKey && config.linearWebhookSecret) {
+    warnings.push("LINEAR_WEBHOOK_SECRET is set but LINEAR_API_KEY is missing - Linear provider will not work");
+  }
+  if (config.githubToken && !config.githubWebhookSecret) {
+    warnings.push("GITHUB_TOKEN is set but GITHUB_WEBHOOK_SECRET is missing - GitHub provider will not work");
+  }
+  if (!config.githubToken && config.githubWebhookSecret) {
+    warnings.push("GITHUB_WEBHOOK_SECRET is set but GITHUB_TOKEN is missing - GitHub provider will not work");
   }
 
+  // Git paths are always required
   if (!config.reposBasePath) {
     errors.push(
       "REPOS_BASE_PATH is required (base directory where repositories are located)"
@@ -143,6 +167,11 @@ export function validateConfig(): void {
     errors.push(
       "WORKTREES_PATH is required (directory where worktrees will be created)"
     );
+  }
+
+  // Log warnings
+  for (const warning of warnings) {
+    console.warn(`Warning: ${warning}`);
   }
 
   if (errors.length > 0) {

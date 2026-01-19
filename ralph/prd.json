@@ -1,7 +1,7 @@
 {
-  "project": "LinearAgent",
+  "project": "IssueAgent",
   "branchName": "ralph/linear-agent",
-  "description": "Linear Agent - Automatically attempt Linear tasks using Claude Code with isolated worktrees",
+  "description": "Issue Agent - Automatically attempt Linear and GitHub issues using Claude Code with isolated worktrees",
   "userStories": [
     {
       "id": "US-001",
@@ -26,9 +26,11 @@
       "description": "As a developer, I need TypeScript interfaces defined so all modules share consistent types.",
       "acceptanceCriteria": [
         "Create src/types.ts with Config interface matching PRD spec",
-        "Add LinearIssue interface: id, title, description, labels, comments, customFields",
-        "Add AgentTask interface: issueId, repo, worktreePath, status, startedAt",
-        "Add AgentResult interface: success, error, branchName, prUrl, summary",
+        "Add IssueProvider type: 'linear' | 'github'",
+        "Add generic Issue interface: id, identifier, title, description, labels, comments, parent, repository, metadata",
+        "Add LinearIssue interface for Linear-specific fields (kept for compatibility)",
+        "Add AgentTask interface: issueId, identifier, repo, worktreePath, status, startedAt, title, provider",
+        "Add AgentResult interface: success, error, branchName, prUrl, summary, hasChanges",
         "Add QueueItem interface: task, addedAt",
         "Add WebhookPayload interface for Linear webhook structure",
         "Export all types",
@@ -36,7 +38,7 @@
       ],
       "priority": 2,
       "passes": true,
-      "notes": "Complete: All interfaces defined in src/types.ts"
+      "notes": "Complete: All interfaces defined in src/types.ts, updated for multi-provider support"
     },
     {
       "id": "US-003",
@@ -78,33 +80,33 @@
       "title": "Linear Client - issue fetching",
       "description": "As the agent runner, I need to fetch full issue details from Linear.",
       "acceptanceCriteria": [
-        "Create src/services/linear-client.ts",
+        "Create src/providers/linear/client.ts implementing IssueClient interface",
         "Initialize LinearClient from @linear/sdk with API key from config",
         "Implement getIssue(issueId): fetches title, description, labels, state",
         "Fetch issue comments if config.includeComments is true",
         "Fetch custom field value for repository (config.repoCustomFieldName)",
         "Fetch parent issue if this is a sub-issue",
-        "Return typed LinearIssue object",
+        "Return typed Issue object (generic interface)",
         "Typecheck passes"
       ],
       "priority": 5,
       "passes": true,
-      "notes": "Complete: Linear client with full issue fetching"
+      "notes": "Complete: Linear client implementing IssueClient interface in providers/linear/"
     },
     {
       "id": "US-006",
       "title": "Linear Client - updates",
       "description": "As the agent runner, I need to update issue status and add comments.",
       "acceptanceCriteria": [
-        "Add updateIssueStatus(issueId, statusName) to linear-client.ts",
-        "Status lookup: find workflow state by name, update issue",
+        "Add updateStatus(issueId, status) to IssueClient interface",
+        "LinearIssueClient: find workflow state by name, update issue",
         "Add addComment(issueId, body) for markdown comments",
         "Handle API errors gracefully, log and rethrow",
         "Typecheck passes"
       ],
       "priority": 6,
       "passes": true,
-      "notes": "Complete: updateIssueStatus and addComment functions"
+      "notes": "Complete: IssueClient interface with updateStatus and addComment methods"
     },
     {
       "id": "US-007",
@@ -112,7 +114,7 @@
       "description": "As the agent runner, I need to construct prompts for Claude Code from issue context.",
       "acceptanceCriteria": [
         "Create src/services/prompt-builder.ts",
-        "Implement buildPrompt(issue: LinearIssue, repo: string, branch: string): string",
+        "Implement buildPrompt(issue: Issue, repo: string, branch: string): string",
         "Include: issue title, description, repo path, branch name",
         "Include parent issue context if sub-issue",
         "Include comments if available",
@@ -176,54 +178,55 @@
     {
       "id": "US-011",
       "title": "Webhook signature validation",
-      "description": "As the system, I need to validate Linear webhook signatures for security.",
+      "description": "As the system, I need to validate webhook signatures for security.",
       "acceptanceCriteria": [
-        "Create src/routes/webhook.ts",
+        "Create src/providers/linear/webhook.ts for Linear webhooks",
+        "Create src/providers/github/webhook.ts for GitHub webhooks",
         "Implement validateSignature(body, signature, secret): boolean",
-        "Use HMAC-SHA256 to compute expected signature",
-        "Compare with Linear-Signature header",
+        "Linear: HMAC-SHA256, compare with Linear-Signature header",
+        "GitHub: HMAC-SHA256, compare with X-Hub-Signature-256 header",
         "Return 401 with error if invalid signature",
         "Log warning on invalid signature attempts",
         "Typecheck passes"
       ],
       "priority": 11,
       "passes": true,
-      "notes": "Complete: HMAC-SHA256 signature validation"
+      "notes": "Complete: HMAC-SHA256 signature validation for both providers"
     },
     {
       "id": "US-012",
       "title": "Webhook event filtering",
       "description": "As the system, I need to filter webhooks to only process label-added events.",
       "acceptanceCriteria": [
-        "Add shouldProcess(payload) function to webhook.ts",
-        "Check payload.type === 'Issue'",
-        "Check payload.action === 'update'",
-        "Check payload.updatedFrom.labelIds exists (label was added)",
-        "Check if new label matches config.triggerLabel",
-        "Return { shouldProcess: boolean, issueId?: string }",
+        "Add shouldProcess(payload) function to each provider's webhook.ts",
+        "Linear: Check payload.type === 'Issue', payload.action === 'update', label added",
+        "GitHub: Check event === 'issues', action === 'labeled'",
+        "Check if new label matches provider's trigger label config",
+        "Return filtering result with issueId",
         "Typecheck passes"
       ],
       "priority": 12,
       "passes": true,
-      "notes": "Complete: Event filtering with label detection"
+      "notes": "Complete: Event filtering with label detection for both providers"
     },
     {
       "id": "US-013",
       "title": "Webhook handler",
-      "description": "As the system, I need the full webhook endpoint that validates, filters, and enqueues.",
+      "description": "As the system, I need webhook endpoints that validate, filter, and enqueue for each provider.",
       "acceptanceCriteria": [
-        "POST /webhook/linear route in webhook.ts",
+        "POST /webhook/linear route for Linear webhooks",
+        "POST /webhook/github route for GitHub webhooks",
         "Validate signature first, return 401 if invalid",
         "Parse body, check shouldProcess(), return 200 if filtered out",
-        "If should process: fetch issue via linear client",
-        "Extract repo from custom field, return 400 if missing",
-        "Add to queue, return 200 immediately",
+        "If should process: fetch issue via provider client",
+        "Extract repo (Linear: custom field, GitHub: repository.full_name)",
+        "Add to queue with provider field, return 200 immediately",
         "Log: received webhook, filtered/accepted, enqueued",
         "Typecheck passes"
       ],
       "priority": 13,
       "passes": true,
-      "notes": "Complete: Full webhook handler with validation and enqueuing"
+      "notes": "Complete: Webhook handlers for both Linear and GitHub providers"
     },
     {
       "id": "US-014",
@@ -298,18 +301,19 @@
       "acceptanceCriteria": [
         "Create src/services/agent-runner.ts",
         "Implement runAgent(task: AgentTask): Promise<AgentResult>",
-        "Flow: resolve repo path, create worktree, update Linear 'In Progress'",
-        "Add 'Agent started' comment to Linear",
+        "Use getClient(task.provider) to get appropriate IssueClient",
+        "Flow: resolve repo path, create worktree, update status to 'in_progress'",
+        "Add 'Agent started' comment to issue",
         "Build prompt, spawn Claude, wait for completion",
         "On success with changes: commit, push, create PR",
-        "Update Linear to 'Review', add completion comment with branch/PR links",
-        "On failure: add error comment to Linear",
+        "Update status to 'review', add completion comment with branch/PR links",
+        "On failure: add error comment to issue",
         "Return AgentResult with success/error/prUrl",
         "Typecheck passes"
       ],
       "priority": 18,
       "passes": true,
-      "notes": "Complete: Full agent orchestration with Linear updates"
+      "notes": "Complete: Full agent orchestration using provider abstraction"
     },
     {
       "id": "US-019",
@@ -334,17 +338,18 @@
       "description": "As an operator, I want to manually retry failed issues.",
       "acceptanceCriteria": [
         "Create src/routes/retry.ts",
-        "POST /retry/:issueId endpoint",
-        "Fetch fresh issue data from Linear",
+        "POST /retry/:issueId?provider=linear|github endpoint",
+        "Validate provider is configured, return 400 if not",
+        "Fetch fresh issue data using provider's client",
         "Return 404 if issue not found",
         "Return 409 if issue already queued or running",
-        "Add to queue, return 200 with { queued: true }",
+        "Add to queue with provider field, return 200 with { queued: true, provider }",
         "Register route in server.ts",
         "Typecheck passes"
       ],
       "priority": 20,
       "passes": true,
-      "notes": "Complete: Retry endpoint with conflict detection"
+      "notes": "Complete: Retry endpoint with provider support"
     },
     {
       "id": "US-021",
@@ -400,6 +405,43 @@
       "priority": 23,
       "passes": true,
       "notes": "Complete: Comprehensive README with setup instructions"
+    },
+    {
+      "id": "US-024",
+      "title": "Provider abstraction layer",
+      "description": "As a developer, I need a provider abstraction to support multiple issue sources.",
+      "acceptanceCriteria": [
+        "Create src/providers/types.ts with IssueClient interface",
+        "IssueClient methods: getIssue, updateStatus, addComment, getRepository, getBranchName",
+        "Create src/providers/index.ts with getClient(provider) registry",
+        "Implement isProviderConfigured(provider) and getConfiguredProviders()",
+        "Lazy-load provider clients on first use",
+        "Throw clear error if unconfigured provider is requested",
+        "Typecheck passes"
+      ],
+      "priority": 24,
+      "passes": true,
+      "notes": "Complete: Provider abstraction with IssueClient interface and registry"
+    },
+    {
+      "id": "US-025",
+      "title": "GitHub provider implementation",
+      "description": "As a user, I want to use GitHub Issues as an issue source alongside Linear.",
+      "acceptanceCriteria": [
+        "Create src/providers/github/client.ts implementing IssueClient",
+        "Issue identifier format: owner/repo#123",
+        "Branch name format: owner-repo-123",
+        "Status updates via labels (add/remove in-progress, review)",
+        "Create src/providers/github/webhook.ts for GitHub webhooks",
+        "Validate X-Hub-Signature-256 header with HMAC-SHA256",
+        "Handle issues.labeled events for trigger label",
+        "Mount webhook at POST /webhook/github",
+        "Add GitHub config: GITHUB_TOKEN, GITHUB_WEBHOOK_SECRET, label configs",
+        "Typecheck passes"
+      ],
+      "priority": 25,
+      "passes": true,
+      "notes": "Complete: Full GitHub provider with webhook and IssueClient implementation"
     }
   ]
 }

@@ -1,10 +1,11 @@
-import type { LinearIssue } from "../types";
+import type { Issue } from "../types";
 
 /**
- * Build a prompt for Claude Code from Linear issue context
+ * Build a prompt for Claude Code from issue context
+ * Works with any provider's issue format
  */
 export function buildPrompt(
-  issue: LinearIssue,
+  issue: Issue,
   repo: string,
   branch: string
 ): string {
