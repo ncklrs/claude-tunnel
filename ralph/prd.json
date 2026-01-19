@@ -1,0 +1,405 @@
+{
+  "project": "LinearAgent",
+  "branchName": "ralph/linear-agent",
+  "description": "Linear Agent - Automatically attempt Linear tasks using Claude Code with isolated worktrees",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Project initialization",
+      "description": "As a developer, I need the project scaffolded with dependencies so I can start building.",
+      "acceptanceCriteria": [
+        "Create package.json with: hono, @linear/sdk, dotenv as dependencies",
+        "Create package.json with: @types/bun, typescript as devDependencies",
+        "Add scripts: dev (bun run src/index.ts), build (bun build), typecheck (tsc --noEmit)",
+        "Create tsconfig.json with strict mode, ESNext target, Bun types",
+        "Create directory structure: src/, src/routes/, src/services/, logs/",
+        "Create empty src/index.ts entry point",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Complete: package.json, tsconfig.json, directory structure created"
+    },
+    {
+      "id": "US-002",
+      "title": "Type definitions",
+      "description": "As a developer, I need TypeScript interfaces defined so all modules share consistent types.",
+      "acceptanceCriteria": [
+        "Create src/types.ts with Config interface matching PRD spec",
+        "Add LinearIssue interface: id, title, description, labels, comments, customFields",
+        "Add AgentTask interface: issueId, repo, worktreePath, status, startedAt",
+        "Add AgentResult interface: success, error, branchName, prUrl, summary",
+        "Add QueueItem interface: task, addedAt",
+        "Add WebhookPayload interface for Linear webhook structure",
+        "Export all types",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Complete: All interfaces defined in src/types.ts"
+    },
+    {
+      "id": "US-003",
+      "title": "Configuration module",
+      "description": "As a developer, I need configuration loaded from multiple sources with validation.",
+      "acceptanceCriteria": [
+        "Create src/config.ts that loads from process.env",
+        "Support .env file via dotenv",
+        "Support optional config.json override",
+        "Throw clear error if LINEAR_API_KEY or LINEAR_WEBHOOK_SECRET missing",
+        "Provide defaults: port=3847, maxConcurrentAgents=1, includeComments=true",
+        "Export typed config object",
+        "Create .env.example with all config keys documented",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Complete: src/config.ts with validation, .env.example created"
+    },
+    {
+      "id": "US-004",
+      "title": "Logger module",
+      "description": "As a developer, I need structured logging for debugging and monitoring.",
+      "acceptanceCriteria": [
+        "Create src/logger.ts with log levels: error, warn, info, debug",
+        "Log format: ISO timestamp, level, message, optional context object",
+        "Log to stdout for server logs",
+        "Provide function to create per-issue file logger (logs/{issueId}.log)",
+        "Log level configurable via LOG_LEVEL env var (default: info)",
+        "Export logger instance and createIssueLogger function",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Complete: src/logger.ts with structured logging and file logger"
+    },
+    {
+      "id": "US-005",
+      "title": "Linear Client - issue fetching",
+      "description": "As the agent runner, I need to fetch full issue details from Linear.",
+      "acceptanceCriteria": [
+        "Create src/services/linear-client.ts",
+        "Initialize LinearClient from @linear/sdk with API key from config",
+        "Implement getIssue(issueId): fetches title, description, labels, state",
+        "Fetch issue comments if config.includeComments is true",
+        "Fetch custom field value for repository (config.repoCustomFieldName)",
+        "Fetch parent issue if this is a sub-issue",
+        "Return typed LinearIssue object",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Complete: Linear client with full issue fetching"
+    },
+    {
+      "id": "US-006",
+      "title": "Linear Client - updates",
+      "description": "As the agent runner, I need to update issue status and add comments.",
+      "acceptanceCriteria": [
+        "Add updateIssueStatus(issueId, statusName) to linear-client.ts",
+        "Status lookup: find workflow state by name, update issue",
+        "Add addComment(issueId, body) for markdown comments",
+        "Handle API errors gracefully, log and rethrow",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Complete: updateIssueStatus and addComment functions"
+    },
+    {
+      "id": "US-007",
+      "title": "Prompt Builder",
+      "description": "As the agent runner, I need to construct prompts for Claude Code from issue context.",
+      "acceptanceCriteria": [
+        "Create src/services/prompt-builder.ts",
+        "Implement buildPrompt(issue: LinearIssue, repo: string, branch: string): string",
+        "Include: issue title, description, repo path, branch name",
+        "Include parent issue context if sub-issue",
+        "Include comments if available",
+        "Include requirements section with commit/focus guidelines",
+        "Output matches PRD template format",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Complete: buildPrompt and buildCompletionSummary functions"
+    },
+    {
+      "id": "US-008",
+      "title": "Task Queue",
+      "description": "As the system, I need a queue to manage concurrent agent execution.",
+      "acceptanceCriteria": [
+        "Create src/services/queue.ts",
+        "In-memory queue with add(task), getNext(), size() methods",
+        "Track running agents count",
+        "Implement canStartNew(): returns true if running < maxConcurrentAgents",
+        "Implement markComplete(issueId) and markFailed(issueId)",
+        "getStatus() returns: queueDepth, runningAgents (with details)",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Complete: Full queue implementation with concurrency control"
+    },
+    {
+      "id": "US-009",
+      "title": "Hono Server with health endpoint",
+      "description": "As an operator, I need the HTTP server running with basic health check.",
+      "acceptanceCriteria": [
+        "Create src/server.ts with Hono app",
+        "GET /health returns { status: 'ok', uptime: number }",
+        "Server listens on config.port",
+        "Update src/index.ts to import and start server",
+        "Log server start message with port",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Complete: Hono server with health endpoint"
+    },
+    {
+      "id": "US-010",
+      "title": "Status endpoint",
+      "description": "As an operator, I want to see queue status and running agents.",
+      "acceptanceCriteria": [
+        "Create src/routes/health.ts with health and status routes",
+        "GET /status returns queue.getStatus() data",
+        "Include: queueDepth, runningCount, runningAgents array",
+        "Each running agent shows: issueId, repo, startedAt",
+        "Register routes in server.ts",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "Complete: Status endpoint in server.ts (combined with health)"
+    },
+    {
+      "id": "US-011",
+      "title": "Webhook signature validation",
+      "description": "As the system, I need to validate Linear webhook signatures for security.",
+      "acceptanceCriteria": [
+        "Create src/routes/webhook.ts",
+        "Implement validateSignature(body, signature, secret): boolean",
+        "Use HMAC-SHA256 to compute expected signature",
+        "Compare with Linear-Signature header",
+        "Return 401 with error if invalid signature",
+        "Log warning on invalid signature attempts",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": "Complete: HMAC-SHA256 signature validation"
+    },
+    {
+      "id": "US-012",
+      "title": "Webhook event filtering",
+      "description": "As the system, I need to filter webhooks to only process label-added events.",
+      "acceptanceCriteria": [
+        "Add shouldProcess(payload) function to webhook.ts",
+        "Check payload.type === 'Issue'",
+        "Check payload.action === 'update'",
+        "Check payload.updatedFrom.labelIds exists (label was added)",
+        "Check if new label matches config.triggerLabel",
+        "Return { shouldProcess: boolean, issueId?: string }",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": "Complete: Event filtering with label detection"
+    },
+    {
+      "id": "US-013",
+      "title": "Webhook handler",
+      "description": "As the system, I need the full webhook endpoint that validates, filters, and enqueues.",
+      "acceptanceCriteria": [
+        "POST /webhook/linear route in webhook.ts",
+        "Validate signature first, return 401 if invalid",
+        "Parse body, check shouldProcess(), return 200 if filtered out",
+        "If should process: fetch issue via linear client",
+        "Extract repo from custom field, return 400 if missing",
+        "Add to queue, return 200 immediately",
+        "Log: received webhook, filtered/accepted, enqueued",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": true,
+      "notes": "Complete: Full webhook handler with validation and enqueuing"
+    },
+    {
+      "id": "US-014",
+      "title": "Git worktree operations",
+      "description": "As the agent runner, I need to create isolated worktrees for each issue.",
+      "acceptanceCriteria": [
+        "Create src/services/git.ts",
+        "Implement createWorktree(repoPath, worktreePath, branchName): Promise<void>",
+        "Run: git worktree add {worktreePath} -b {branchName}",
+        "Handle 'already exists' error: return success if worktree usable",
+        "Implement removeWorktree(worktreePath): Promise<void>",
+        "Use Bun.spawn for subprocess execution",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": "Complete: Worktree create/remove with Bun.spawn"
+    },
+    {
+      "id": "US-015",
+      "title": "Claude Code execution",
+      "description": "As the agent runner, I need to spawn Claude Code with the prompt in the worktree.",
+      "acceptanceCriteria": [
+        "Add spawnClaude(worktreePath, prompt, logFile): Promise<{exitCode, stdout, stderr}>",
+        "Run: claude -p \"{prompt}\" in worktreePath directory",
+        "Stream stdout/stderr to logFile",
+        "Implement timeout (config.agentTimeout, default 30 minutes)",
+        "Kill process on timeout, return error result",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": true,
+      "notes": "Complete: Claude spawning with timeout in agent-runner.ts"
+    },
+    {
+      "id": "US-016",
+      "title": "Git commit and push",
+      "description": "As the agent runner, I need to commit changes and push the branch.",
+      "acceptanceCriteria": [
+        "Add hasChanges(worktreePath): Promise<boolean> using git status",
+        "Add commitChanges(worktreePath, message): Promise<void>",
+        "Run: git add -A && git commit -m \"{message}\"",
+        "Add pushBranch(worktreePath, branchName): Promise<void>",
+        "Run: git push -u origin {branchName}",
+        "Handle push errors (auth, network) with clear error message",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": true,
+      "notes": "Complete: hasChanges, commitChanges, pushBranch in git.ts"
+    },
+    {
+      "id": "US-017",
+      "title": "PR creation",
+      "description": "As the agent runner, I need to create a PR after pushing.",
+      "acceptanceCriteria": [
+        "Add createPR(worktreePath, title, body, baseBranch): Promise<string | null>",
+        "Run: gh pr create --title \"{title}\" --body \"{body}\" --base {baseBranch}",
+        "Parse PR URL from gh output",
+        "Return null on failure (don't block on PR creation)",
+        "Log PR creation success/failure",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": "Complete: createPR function using gh CLI"
+    },
+    {
+      "id": "US-018",
+      "title": "Agent Runner orchestration",
+      "description": "As the system, I need the full agent runner that coordinates all steps.",
+      "acceptanceCriteria": [
+        "Create src/services/agent-runner.ts",
+        "Implement runAgent(task: AgentTask): Promise<AgentResult>",
+        "Flow: resolve repo path, create worktree, update Linear 'In Progress'",
+        "Add 'Agent started' comment to Linear",
+        "Build prompt, spawn Claude, wait for completion",
+        "On success with changes: commit, push, create PR",
+        "Update Linear to 'Review', add completion comment with branch/PR links",
+        "On failure: add error comment to Linear",
+        "Return AgentResult with success/error/prUrl",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": true,
+      "notes": "Complete: Full agent orchestration with Linear updates"
+    },
+    {
+      "id": "US-019",
+      "title": "Queue processor",
+      "description": "As the system, I need the queue to automatically process tasks.",
+      "acceptanceCriteria": [
+        "Add processQueue() function that runs continuously",
+        "Check queue.canStartNew() before starting agent",
+        "Get next task, mark as running, call runAgent()",
+        "On completion: mark complete/failed in queue",
+        "Process next item if available",
+        "Start processor on server startup",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": true,
+      "notes": "Complete: processor.ts with continuous queue processing"
+    },
+    {
+      "id": "US-020",
+      "title": "Retry endpoint",
+      "description": "As an operator, I want to manually retry failed issues.",
+      "acceptanceCriteria": [
+        "Create src/routes/retry.ts",
+        "POST /retry/:issueId endpoint",
+        "Fetch fresh issue data from Linear",
+        "Return 404 if issue not found",
+        "Return 409 if issue already queued or running",
+        "Add to queue, return 200 with { queued: true }",
+        "Register route in server.ts",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": true,
+      "notes": "Complete: Retry endpoint with conflict detection"
+    },
+    {
+      "id": "US-021",
+      "title": "State persistence",
+      "description": "As an operator, I want agent state persisted for crash recovery.",
+      "acceptanceCriteria": [
+        "Create src/services/state.ts",
+        "Track running agents in state.json file",
+        "Implement saveState(runningAgents): void with atomic write (temp + rename)",
+        "Implement loadState(): AgentTask[] for recovery",
+        "Update state on agent start/complete/fail",
+        "On startup: load state, offer to resume incomplete tasks",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": true,
+      "notes": "Complete: Atomic state persistence with recovery"
+    },
+    {
+      "id": "US-022",
+      "title": "Orphan worktree cleanup",
+      "description": "As an operator, I want orphaned worktrees cleaned up.",
+      "acceptanceCriteria": [
+        "Add cleanupOrphanWorktrees() to git.ts",
+        "Scan worktreesPath directory",
+        "Compare against running agents from state",
+        "Worktrees without matching running agent are orphans",
+        "Config option: autoCleanOrphans (default false)",
+        "If autoClean: remove orphans, log each removal",
+        "If not autoClean: log orphans for manual review",
+        "Run cleanup on startup",
+        "Typecheck passes"
+      ],
+      "priority": 22,
+      "passes": true,
+      "notes": "Complete: Orphan cleanup with auto-clean option"
+    },
+    {
+      "id": "US-023",
+      "title": "README and cloudflared setup",
+      "description": "As a developer, I need documentation for setup and tunnel configuration.",
+      "acceptanceCriteria": [
+        "Create README.md with project overview",
+        "Document all environment variables with examples",
+        "Include Linear setup: custom field, webhook, labels, statuses",
+        "Include cloudflared installation: brew install cloudflared",
+        "Include tunnel command: cloudflared tunnel --url http://localhost:3847",
+        "Document webhook URL format for Linear",
+        "Include npm scripts documentation",
+        "Add quick start section",
+        "Typecheck passes"
+      ],
+      "priority": 23,
+      "passes": true,
+      "notes": "Complete: Comprehensive README with setup instructions"
+    }
+  ]
+}
